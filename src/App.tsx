@@ -20,6 +20,7 @@ import {
 import { LiveTranscriptionController } from "./lib/live-transcription";
 import { pcmToWavBlob } from "./lib/audio-utils";
 import { playListeningChime, playThinkingChime } from "./lib/chime";
+import { findStreamingTtsChunk } from "./lib/streaming-tts";
 import {
   finalizeSavedTranscriptSession,
   getSavedTranscriptSessions,
@@ -301,6 +302,46 @@ export default function App() {
     let answerTurnId: string | null = null;
     let finalReplyText = "";
     let hasPlayedThinkingChime = false;
+    let queuedSpeechChars = 0;
+    let streamedSpeechStarted = false;
+    let playbackStarted = false;
+    let speechQueue = Promise.resolve();
+
+    const queueSpeechChunk = (text: string, assistantTurnId: string) => {
+      const chunkText = text.trim();
+      if (!chunkText) {
+        return;
+      }
+
+      streamedSpeechStarted = true;
+      const audioPromise = fetchTtsAudio({
+        text: chunkText,
+        speed: ttsSpeed,
+      });
+
+      speechQueue = speechQueue.then(async () => {
+        const audioReply = await audioPromise;
+
+        if (runToken !== runTokenRef.current) {
+          return;
+        }
+
+        await audioControllerRef.current.playBlob(audioReply, {
+          onStart: () => {
+            if (playbackStarted) {
+              return;
+            }
+
+            playbackStarted = true;
+            dispatch({
+              type: "PLAYBACK_STARTED",
+              assistantTurnId,
+              at: new Date().toISOString(),
+            });
+          },
+        });
+      });
+    };
 
     await streamReply(sessionId, transcript, {
       onEvent: (event) => {
@@ -376,6 +417,23 @@ export default function App() {
                 text: event.text,
               });
             }
+
+            if (answerTurnId) {
+              while (true) {
+                const nextChunk = findStreamingTtsChunk(
+                  event.text,
+                  queuedSpeechChars,
+                  false,
+                );
+
+                if (!nextChunk) {
+                  break;
+                }
+
+                queuedSpeechChars = nextChunk.nextConsumedChars;
+                queueSpeechChunk(nextChunk.chunk, answerTurnId);
+              }
+            }
             break;
           }
 
@@ -419,19 +477,33 @@ export default function App() {
       return;
     }
 
-    const audioReply = await fetchTtsAudio({
-      text: finalReplyText,
-      speed: ttsSpeed,
-    });
-    await audioControllerRef.current.playBlob(audioReply, {
-      onStart: () => {
-        dispatch({
-          type: "PLAYBACK_STARTED",
-          assistantTurnId: finalAnswerTurnId,
-          at: new Date().toISOString(),
-        });
-      },
-    });
+    if (!streamedSpeechStarted) {
+      const audioReply = await fetchTtsAudio({
+        text: finalReplyText,
+        speed: ttsSpeed,
+      });
+      await audioControllerRef.current.playBlob(audioReply, {
+        onStart: () => {
+          dispatch({
+            type: "PLAYBACK_STARTED",
+            assistantTurnId: finalAnswerTurnId,
+            at: new Date().toISOString(),
+          });
+        },
+      });
+    } else {
+      const finalChunk = findStreamingTtsChunk(
+        finalReplyText,
+        queuedSpeechChars,
+        true,
+      );
+      if (finalChunk) {
+        queuedSpeechChars = finalChunk.nextConsumedChars;
+        queueSpeechChunk(finalChunk.chunk, finalAnswerTurnId);
+      }
+
+      await speechQueue;
+    }
 
     dispatch({
       type: "PLAYBACK_ENDED",

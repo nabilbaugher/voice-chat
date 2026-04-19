@@ -18,11 +18,13 @@ const PROMPT_PREAMBLE = [
   "Avoid long listicles, long preambles, and exhaustive caveats unless depth is specifically requested or clearly necessary.",
   "Prefer a natural spoken cadence over heavily formatted output.",
   "Avoid code snippets, pseudo-code, or implementation detail dumps unless the user explicitly asks for them.",
-  "Use the provided project context when it is relevant, but do not cite internal notes unless asked."
+  "Use the provided project context when it is relevant, but do not cite internal notes unless asked.",
+  "Your responses should be concise, and when you want to communicate multiple ideas, do it over multiple turns like a conversation.",
+  "The last thing you want to do is overwhelm the user interacting with you through voice.",
 ].join("\n");
 
 export async function listContextFiles(
-  contextDir = path.resolve(process.cwd(), "context")
+  contextDir = path.resolve(process.cwd(), "context"),
 ): Promise<string[]> {
   try {
     return (await readdir(contextDir))
@@ -43,7 +45,7 @@ export async function loadContextBundle(
   options: {
     previousConversations?: PreviousConversationContext[];
     selectedFilenames?: string[];
-  } = {}
+  } = {},
 ): Promise<LoadedContextBundle> {
   const availableFilenames = await listContextFiles(contextDir);
   const selectedSet =
@@ -60,7 +62,7 @@ export async function loadContextBundle(
       const absolutePath = path.join(contextDir, filename);
       const content = await readFile(absolutePath, "utf8");
       return `# ${filename}\n\n${content.trim()}`;
-    })
+    }),
   );
 
   const contextBlock =
@@ -70,7 +72,7 @@ export async function loadContextBundle(
 
   const previousConversations =
     options.previousConversations?.filter(
-      (conversation) => conversation.turns.length > 0
+      (conversation) => conversation.turns.length > 0,
     ) ?? [];
   const previousConversationBlock =
     previousConversations.length > 0
@@ -92,13 +94,14 @@ export async function loadContextBundle(
                 .join("\n");
               return `${header}\n${transcript}`;
             })
-            .join("\n\n---\n\n")
+            .join("\n\n---\n\n"),
         ].join("\n\n")
       : "No prior conversation context was selected for this session.";
 
   return {
     fileCount: filenames.length,
     filenames,
-    systemPrompt: `${PROMPT_PREAMBLE}\n\n${contextBlock}\n\n${previousConversationBlock}`.trim()
+    systemPrompt:
+      `${PROMPT_PREAMBLE}\n\n${contextBlock}\n\n${previousConversationBlock}`.trim(),
   };
 }
