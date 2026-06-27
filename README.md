@@ -55,6 +55,7 @@ Drop any markdown project notes into [`context/README.md`](/Users/nabilbaugher/d
 ```bash
 pnpm install
 pnpm dev
+pnpm serve:prod
 pnpm test
 pnpm check
 pnpm build
@@ -64,6 +65,8 @@ Development starts:
 
 - Vite frontend on `http://localhost:5173`
 - Express API on `http://localhost:3001`
+
+For a stable phone/tunnel session, use `pnpm serve:prod` and expose `http://localhost:3001` instead of tunneling the Vite dev server.
 
 ## Notes
 
